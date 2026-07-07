@@ -3,7 +3,7 @@
  * Plugin Name: AI Smart Router
  * Plugin URI: https://yoursite.com/
  * Description: 24/7 AI assistant with 26 free models, 5 API keys, auto-failover, WhatsApp integration, and web chat.
- * Version: 1.0.0
+ * Version: 1.0.1
  * Requires PHP: 7.4
  * Requires WP: 5.5
  * Author: AI Router
@@ -12,7 +12,7 @@
 
 defined('ABSPATH') or die;
 
-define('AI_SR_VERSION', '1.0.0');
+define('AI_SR_VERSION', '1.0.1');
 define('AI_SR_PATH', plugin_dir_path(__FILE__));
 define('AI_SR_URL', plugin_dir_url(__FILE__));
 
@@ -374,11 +374,13 @@ function ai_sr_chat($message, $conversation_id = '', $type = 'customer') {
         return ['success' => true, 'reply' => $reply, 'model' => $model['name'], 'key' => $ki + 1];
       }
 
-      if (in_array($code, [429, 400, 500, 503])) {
+      if (in_array($code, [429, 400, 401, 500, 503])) {
         $exhausted_for_key[] = $model['id'];
         $exhausted[$ki] = $exhausted_for_key;
         update_option('ai_router_exhausted_models', $exhausted);
-        ai_sr_log('EXHAUSTED', $model['name'] . ' on Key #' . ($ki + 1) . ' (HTTP ' . $code . ')');
+        $err_detail = $data['error']['message'] ?? $data['error'] ?? '';
+        $err_detail = is_string($err_detail) ? $err_detail : (is_array($err_detail) ? json_encode($err_detail) : '');
+        ai_sr_log('EXHAUSTED', $model['name'] . ' Key#' . ($ki + 1) . ' HTTP ' . $code . ($err_detail ? ': ' . mb_substr($err_detail, 0, 120) : ''));
         continue;
       }
 
@@ -386,11 +388,13 @@ function ai_sr_chat($message, $conversation_id = '', $type = 'customer') {
         ai_sr_log('NETWORK ERROR', $model['name'] . ': ' . $response->get_error_message());
         continue;
       }
+      $err_detail = $data['error']['message'] ?? json_encode($data);
+      ai_sr_log('UNEXPECTED', $model['name'] . ' Key#' . ($ki + 1) . ' HTTP ' . $code . ': ' . mb_substr($err_detail, 0, 120));
     }
     update_option('ai_router_current', ['key' => $ki + 1, 'model' => 0]);
   }
 
-  return ['success' => false, 'message' => 'All models exhausted on all keys. Try again later.'];
+  return ['success' => false, 'message' => 'All ' . count($models) . ' models tried on all ' . count(array_filter($keys)) . ' keys.'];
 }
 
 /* ======================== REST API ======================== */
@@ -511,6 +515,9 @@ function ai_sr_handle_webhook($request) {
       ]);
     }
   }
+  if (!$result['success'] && empty($result['reply'])) {
+    $result['reply'] = $result['message'] ?? 'Currently unavailable. Please try again later.';
+  }
   return new WP_REST_Response($result);
 }
 
@@ -601,6 +608,7 @@ function ai_sr_admin_page() {
   $tab = isset($_GET['tab']) ? sanitize_key($_GET['tab']) : 'dashboard';
   $template = AI_SR_PATH . 'admin/views/settings-page.php';
   if (!file_exists($template)) { echo '<div class="wrap"><h1>AI Smart Router</h1><div class="notice notice-error"><p>Template file missing: admin/views/settings-page.php</p></div></div>'; return; }
+  echo '<style>.ai-sr-wrap{font-family:Inter,-apple-system,sans-serif;max-width:1200px}.ai-sr-wrap h1{font-size:22px;font-weight:700;margin-bottom:4px}.ai-sr-status-bar{background:#fff;border:1px solid #e2e8f0;border-radius:8px;padding:10px 16px;display:flex;gap:20px;flex-wrap:wrap;font-size:13px;color:#64748b;margin-bottom:16px}.ai-sr-status-bar strong{color:#1e293b}.ai-sr-tabs{display:flex;gap:2px;margin-bottom:16px;border-bottom:2px solid #e2e8f0}.ai-sr-tabs a{padding:8px 16px;font-size:13px;font-weight:500;color:#64748b;text-decoration:none;border-bottom:2px solid transparent;margin-bottom:-2px}.ai-sr-tabs a:hover{color:#1e293b}.ai-sr-tabs a.active{color:#3b82f6;border-bottom-color:#3b82f6}.ai-sr-section{background:#fff;border:1px solid #e2e8f0;border-radius:10px;padding:20px}.ai-sr-section h2{font-size:16px;font-weight:600;margin:0 0 8px}.ai-sr-grid-2{display:grid;grid-template-columns:1fr 1fr;gap:12px}@media(max-width:680px){.ai-sr-grid-2{grid-template-columns:1fr}}.ai-sr-card{background:#f8fafc;border:1px solid #e2e8f0;border-radius:8px;padding:14px}.ai-sr-card h4{font-size:13px;font-weight:600;color:#64748b;margin:0 0 4px}.ai-sr-stat{font-size:28px;font-weight:700;color:#1e293b}.ai-sr-meta{font-size:12px;color:#94a3b8;margin:4px 0 0}.ai-sr-input{border:1px solid #e2e8f0;border-radius:6px;padding:6px 10px;font-size:13px;color:#1e293b;background:#fff}.ai-sr-input.wide{width:100%}.ai-sr-key-table,.ai-sr-model-table,.ai-sr-log-table{width:100%;border-collapse:collapse;font-size:13px}.ai-sr-key-table th,.ai-sr-model-table th,.ai-sr-log-table th{text-align:left;padding:8px 10px;border-bottom:2px solid #e2e8f0;color:#64748b;font-weight:600;font-size:12px;text-transform:uppercase}.ai-sr-key-table td,.ai-sr-model-table td,.ai-sr-log-table td{padding:8px 10px;border-bottom:1px solid #f1f5f9;color:#1e293b}.ai-sr-key-table tr:hover,.ai-sr-model-table tr:hover{background:#f8fafc}.ai-sr-model-table .active-row{background:#f0f9ff}.ai-sr-event-ok{color:#22c55e;font-weight:500}.ai-sr-event-exhausted{color:#ef4444;font-weight:500}.ai-sr-event-network{color:#f59e0b;font-weight:500}.button-primary{background:#3b82f6!important;border-color:#3b82f6!important}.ai-sr-section label:hover{background:#f8fafc}.ai-sr-section input[type=checkbox]{accent-color:#3b82f6;width:16px;height:16px;flex-shrink:0}</style>';
   include $template;
 }
 
