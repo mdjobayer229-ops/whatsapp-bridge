@@ -1,4 +1,3 @@
-if (!globalThis.crypto) globalThis.crypto = require('crypto').webcrypto;
 const {
   default: makeWASocket,
   useMultiFileAuthState,

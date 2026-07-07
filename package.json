@@ -10,7 +10,7 @@
     "restart": "pm2 restart whatsapp-bridge"
   },
   "dependencies": {
-    "@whiskeysockets/baileys": "^6.7.0",
+    "@whiskeysockets/baileys": "^5.0.0",
     "qrcode": "^1.5.3",
     "axios": "^1.7.0",
     "pino": "^8.0.0"
