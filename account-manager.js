@@ -49,11 +49,18 @@ async function createAccount(config) {
   let reconnectAttempts = 0;
   const accountObj = { sock, id, phone, config, connected: false, qrBuffer: null, authDir, createdAt: Date.now() };
 
+  let qrTimeout = setTimeout(() => {
+    if (!accountObj.qrBuffer && !accountObj.connected) {
+      log(`No QR/connect after 30s — WebSocket may be blocked`);
+    }
+  }, 30000);
+
   sock.ev.on('creds.update', saveCreds);
 
   sock.ev.on('connection.update', async ({ connection, lastDisconnect, qr }) => {
     if (qr) {
       reconnectAttempts = 0;
+      clearTimeout(qrTimeout);
       log(`QR code received, generating buffer...`);
       try {
         accountObj.qrBuffer = await QRCode.toBuffer(qr, { width: 400, margin: 2, type: 'png' });
@@ -66,11 +73,13 @@ async function createAccount(config) {
 
     if (connection === 'open') {
       reconnectAttempts = 0;
+      clearTimeout(qrTimeout);
       accountObj.connected = true;
       log(`Connection opened ✓`);
     }
 
     if (connection === 'close') {
+      clearTimeout(qrTimeout);
       accountObj.connected = false;
       const reason = lastDisconnect?.error?.output?.statusCode;
       const reasonText = lastDisconnect?.error?.message || 'unknown';

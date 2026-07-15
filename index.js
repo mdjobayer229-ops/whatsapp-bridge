@@ -3,6 +3,8 @@ const http = require('http');
 const fs = require('fs');
 const path = require('path');
 const axios = require('axios');
+const net = require('net');
+const dns = require('dns');
 const accountManager = require('./account-manager');
 const scanner = require('./scanner');
 const validator = require('./validator');
@@ -305,6 +307,27 @@ ${HTML_FOOT}`);
 
       else if (pathname === '/warmup') {
         jsonResponse(res, { accounts: warmup.getAllStatus() });
+      }
+
+      else if (pathname === '/diag') {
+        const results = { node: process.version, arch: process.arch, platform: process.platform, memory: process.memoryUsage(), tests: [] };
+        const waHosts = ['web.whatsapp.com', 'w1.web.whatsapp.com', 'w2.web.whatsapp.com', 'w3.web.whatsapp.com', 'w4.web.whatsapp.com', 'w5.web.whatsapp.com', 'w6.web.whatsapp.com', 'w7.web.whatsapp.com', 'w8.web.whatsapp.com', 'w9.web.whatsapp.com', 'w10.web.whatsapp.com', 'v1.web.whatsapp.com', 'v2.web.whatsapp.com'];
+        for (const host of waHosts.slice(0, 4)) {
+          try {
+            const addr = await new Promise((res, rej) => dns.resolve4(host, (e, a) => e ? rej(e) : res(a?.[0] || 'none')));
+            const tcpOk = await new Promise((res) => {
+              const s = net.connect(443, addr, () => { s.destroy(); res(true); });
+              s.on('error', () => { s.destroy(); res(false); });
+              s.setTimeout(5000, () => { s.destroy(); res(false); });
+            });
+            results.tests.push({ host, resolved: addr, tcp_port_443: tcpOk });
+          } catch (e) { results.tests.push({ host, error: e.message }); }
+        }
+        const acc = accountManager.getAllAccounts();
+        const accObj = acc.length > 0 ? accountManager.getAccount(acc[0].id) : null;
+        results.ws_readyState = accObj?.sock?.ws?.readyState ?? -1;
+        results.ws_state_labels = { 0: 'CONNECTING', 1: 'OPEN', 2: 'CLOSING', 3: 'CLOSED', '-1': 'NO_SOCKET' };
+        jsonResponse(res, results);
       }
 
       else if (pathname === '/accounts') {
